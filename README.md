@@ -19,19 +19,41 @@ Este projeto implementa um agente mínimo, mas com essas três garantias.
 ## Arquitetura
 
 ```
-agent.py           → loop principal: recebe objetivo, chama o modelo (Claude),
-                      decide se cada ação pode ser executada, pede confirmação
-                      humana quando necessário, chama a tool real
-permissions.py      → camada de autorização: teto por ação, teto diário,
-                      allowlist de ações permitidas (fail-safe: nega por padrão)
-audit.py            → trilha de auditoria em SQLite: toda decisão é logada
-                      (aprovada, negada, confirmada manualmente, executada, falha)
+agent.py              → loop principal: recebe objetivo, chama o modelo (Claude),
+                         decide se cada ação pode ser executada, pede confirmação
+                         humana quando necessário, chama a tool real
+permissions.py        → camada de autorização: teto por ação, teto diário,
+                         allowlist de ações permitidas (fail-safe: nega por padrão)
+audit.py              → trilha de auditoria em SQLite: toda decisão é logada
+                         (aprovada, negada, confirmada manualmente, executada, falha)
 tools/stripe_tools.py → check_balance, list_pending_bills, pay_bill — wrappers
-                      do Stripe sandbox, com modo dry_run automático quando
-                      não há chave configurada
+                         do Stripe sandbox, com modo dry_run automático quando
+                         não há chave configurada
+dashboard.py          → dashboard web para monitorar pagamentos, segurança,
+                         política de autorização e trilha de auditoria
 ```
 
-### Fluxo de segurança
+## Dashboard
+
+O projeto agora inclui um dashboard web inspirado no layout e nos padrões
+visuais do exemplo de dashboard do [shadcn/ui](https://ui.shadcn.com/examples/dashboard).
+Ele lê diretamente a trilha SQLite usada pelo agente, então decisões e
+execuções aparecem no mesmo painel sem duplicar o sistema de auditoria.
+
+```bash
+pip install -r requirements.txt
+streamlit run dashboard.py
+```
+
+O dashboard possui:
+
+- **Overview** — pagamentos executados, valor movimentado, limite restante e negações.
+- **Payment activity** — visualização da atividade de pagamentos.
+- **Security posture** — teto de auto-aprovação, limite diário, allowlist e fail-safe.
+- **Audit Trail** — tabela filtrável de todas as decisões registradas.
+- **Policy** — visão da política de autorização e ferramentas permitidas.
+
+## Fluxo de segurança
 
 1. O modelo decide **qual** ferramenta chamar e com quais argumentos (ex:
    pagar a conta X até R$ 200,00).
@@ -83,13 +105,13 @@ print(result)
 ```
 
 Isso vai pausar e pedir confirmação no terminal, porque R\$ 200,00 está acima
-do teto de auto-aprovação padrão (R\$ 100,00).
+do teto de auto-aprovação padrão (R$ 100,00).
 
 ## Próximos passos (roadmap)
 
 - [ ] Testes automatizados (pytest) cobrindo casos adversariais de permissão.
 - [ ] Simulação de prompt injection via descrição de cobrança maliciosa.
-- [ ] Dashboard simples (CLI ou web) para visualizar a trilha de auditoria.
+- [x] Dashboard web para visualizar a trilha de auditoria.
 - [ ] Integração com Pix via sandbox de Open Finance.
 
 ## Stack
@@ -98,3 +120,4 @@ do teto de auto-aprovação padrão (R\$ 100,00).
 - [Anthropic API](https://docs.claude.com) (tool use)
 - [Stripe](https://stripe.com/docs) (modo sandbox)
 - SQLite (auditoria)
+- Streamlit + Pandas (dashboard)
