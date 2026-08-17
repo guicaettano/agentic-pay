@@ -3,7 +3,7 @@
 Agente de IA que recebe um objetivo do tipo **"pague essa conta até X valor"**,
 verifica saldo disponível, decide se pode executar sozinho ou precisa de
 confirmação humana, e executa o pagamento (Stripe sandbox) dentro de um teto
-pré-aprovado — com trilha de auditoria completa de cada decisão.
+pré-aprovado, com trilha de auditoria completa de cada decisão.
 
 ## O problema
 
@@ -35,8 +35,6 @@ dashboard.py          → dashboard web para monitorar pagamentos, segurança,
 
 ## Dashboard
 
-O projeto agora inclui um dashboard web inspirado no layout e nos padrões
-visuais do exemplo de dashboard do [shadcn/ui](https://ui.shadcn.com/examples/dashboard).
 Ele lê diretamente a trilha SQLite usada pelo agente, então decisões e
 execuções aparecem no mesmo painel sem duplicar o sistema de auditoria.
 
@@ -75,7 +73,7 @@ O dashboard possui:
 pip install -r requirements.txt
 
 export ANTHROPIC_API_KEY=sua_chave_anthropic
-export STRIPE_API_KEY=sua_chave_de_teste_stripe   # opcional
+export STRIPE_API_KEY=sua_chave_de_teste_stripe  
 
 python agent.py
 ```
@@ -86,8 +84,8 @@ permissões e auditoria sem precisar de conta configurada.
 
 ## Testando a camada de segurança isoladamente
 
-Não precisa da chave da Anthropic pra testar a parte mais importante do
-projeto — permissões, confirmação humana e auditoria funcionam sozinhas:
+Não precisa da chave da Anthropic/OpenAI pra testar a parte mais importante do
+projeto, permissões, confirmação humana e auditoria funcionam sozinhas:
 
 ```bash
 python3 -c "
@@ -107,17 +105,11 @@ print(result)
 Isso vai pausar e pedir confirmação no terminal, porque R\$ 200,00 está acima
 do teto de auto-aprovação padrão (R$ 100,00).
 
-## Próximos passos (roadmap)
-
-- [ ] Testes automatizados (pytest) cobrindo casos adversariais de permissão.
-- [ ] Simulação de prompt injection via descrição de cobrança maliciosa.
-- [x] Dashboard web para visualizar a trilha de auditoria.
-- [ ] Integração com Pix via sandbox de Open Finance.
 
 ## Stack
 
 - Python 3.11+
-- [Anthropic API](https://docs.claude.com) (tool use)
+- [OPENAI API] (tool use)
 - [Stripe](https://stripe.com/docs) (modo sandbox)
 - SQLite (auditoria)
 - Streamlit + Pandas (dashboard)
