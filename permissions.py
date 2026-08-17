@@ -4,9 +4,6 @@ permissions.py
 O coração do "trust layer" do agente: define o que ele pode decidir sozinho
 e o que precisa de confirmação humana explícita.
 
-Esse é o tipo de código que gera boas perguntas em entrevista técnica —
-porque é exatamente o problema central de colocar um agente autônomo
-perto de dinheiro real.
 """
 
 from dataclasses import dataclass
