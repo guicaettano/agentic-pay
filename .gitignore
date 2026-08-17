@@ -1,0 +1,14 @@
+# Segredos
+.env
+ 
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+ 
+# Dados locais (banco de auditoria de teste)
+data/*.db
+ 
+# OS
+.DS_Store

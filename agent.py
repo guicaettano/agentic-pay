@@ -19,50 +19,65 @@ Fluxo de segurança (o que mais importa aqui):
      volta pro modelo continuar o raciocínio.
 
 Rodar:
-    export ANTHROPIC_API_KEY=sua_chave
-    export STRIPE_API_KEY=sua_chave_de_teste   # opcional, roda em dry_run sem isso
+    cp .env.example .env
+    # edite o .env com sua chave da OpenAI (OPENAI_API_KEY) e, opcionalmente,
+    # a chave restrita do Stripe (STRIPE_API_KEY)
     python agent.py
 """
 
 import json
 import os
 
+from dotenv import load_dotenv
+
+load_dotenv()  # precisa rodar ANTES de importar tools.stripe_tools, que lê
+                # STRIPE_API_KEY do ambiente assim que é importado.
+
 from audit import init_db, log_event
 from permissions import PermissionPolicy, evaluate_action
 from tools import stripe_tools
 
-MODEL = "claude-sonnet-4-5"
+MODEL = "gpt-4o"
 
 TOOLS = [
     {
-        "name": "check_balance",
-        "description": "Consulta o saldo disponível da conta antes de autorizar qualquer pagamento.",
-        "input_schema": {"type": "object", "properties": {}},
-    },
-    {
-        "name": "list_pending_bills",
-        "description": "Lista contas/cobranças pendentes que podem ser pagas.",
-        "input_schema": {
-            "type": "object",
-            "properties": {"limit": {"type": "integer", "description": "Quantidade de contas a listar."}},
+        "type": "function",
+        "function": {
+            "name": "check_balance",
+            "description": "Consulta o saldo disponível da conta antes de autorizar qualquer pagamento.",
+            "parameters": {"type": "object", "properties": {}},
         },
     },
     {
-        "name": "pay_bill",
-        "description": (
-            "Executa o pagamento de uma conta específica, até um valor determinado. "
-            "Ação monetária sensível — passa pela camada de permissões e pode exigir "
-            "confirmação humana antes de ser executada."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "bill_id": {"type": "string", "description": "ID da conta a pagar."},
-                "amount_cents": {"type": "integer", "description": "Valor a pagar, em centavos."},
-                "payee": {"type": "string", "description": "Nome ou ID do beneficiário."},
-                "currency": {"type": "string", "description": "Moeda, ex: 'brl'."},
+        "type": "function",
+        "function": {
+            "name": "list_pending_bills",
+            "description": "Lista contas/cobranças pendentes que podem ser pagas.",
+            "parameters": {
+                "type": "object",
+                "properties": {"limit": {"type": "integer", "description": "Quantidade de contas a listar."}},
             },
-            "required": ["bill_id", "amount_cents", "payee"],
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "pay_bill",
+            "description": (
+                "Executa o pagamento de uma conta específica, até um valor determinado. "
+                "Ação monetária sensível — passa pela camada de permissões e pode exigir "
+                "confirmação humana antes de ser executada."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "bill_id": {"type": "string", "description": "ID da conta a pagar."},
+                    "amount_cents": {"type": "integer", "description": "Valor a pagar, em centavos."},
+                    "payee": {"type": "string", "description": "Nome ou ID do beneficiário."},
+                    "currency": {"type": "string", "description": "Moeda, ex: 'brl'."},
+                },
+                "required": ["bill_id", "amount_cents", "payee"],
+            },
         },
     },
 ]
@@ -173,60 +188,61 @@ def execute_tool(name: str, tool_input: dict, policy: PermissionPolicy, spent_to
 def run_agent(user_goal: str, policy: PermissionPolicy = None, max_turns: int = 6):
     """Roda o loop do agente até ele terminar ou atingir max_turns.
 
-    O import da SDK da Anthropic fica aqui dentro (e não no topo do arquivo)
+    O import da SDK da OpenAI fica aqui dentro (e não no topo do arquivo)
     de propósito: assim `execute_tool`, `permissions` e `audit` podem ser
     testados isoladamente sem precisar da SDK instalada — útil em CI ou
     para testar só a camada de segurança.
     """
-    import anthropic
+    from openai import OpenAI
 
     init_db()
     policy = policy or PermissionPolicy()
-    client = anthropic.Anthropic()  # usa ANTHROPIC_API_KEY do ambiente
+    client = OpenAI()  # usa OPENAI_API_KEY do ambiente
 
-    messages = [{"role": "user", "content": user_goal}]
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": user_goal},
+    ]
     spent_today_cents = 0
 
     for _ in range(max_turns):
-        response = client.messages.create(
+        response = client.chat.completions.create(
             model=MODEL,
-            max_tokens=1024,
-            system=SYSTEM_PROMPT,
             tools=TOOLS,
             messages=messages,
         )
+        message = response.choices[0].message
 
-        messages.append({"role": "assistant", "content": response.content})
+        # A mensagem do assistente precisa ser adicionada ao histórico
+        # exatamente como veio, incluindo os tool_calls, ou a próxima
+        # chamada perde o contexto de qual tool_call_id corresponde a quê.
+        messages.append(message.model_dump(exclude_unset=True))
 
-        if response.stop_reason != "tool_use":
-            final_text = "".join(block.text for block in response.content if block.type == "text")
-            return final_text
+        if not message.tool_calls:
+            return message.content or ""
 
-        tool_results = []
-        for block in response.content:
-            if block.type != "tool_use":
-                continue
+        for tool_call in message.tool_calls:
+            name = tool_call.function.name
+            tool_input = json.loads(tool_call.function.arguments)
 
             result, spent_today_cents = execute_tool(
-                block.name, block.input, policy, spent_today_cents
+                name, tool_input, policy, spent_today_cents
             )
 
-            tool_results.append(
+            messages.append(
                 {
-                    "type": "tool_result",
-                    "tool_use_id": block.id,
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
                     "content": json.dumps(result, default=str),
                 }
             )
-
-        messages.append({"role": "user", "content": tool_results})
 
     return "Número máximo de turnos atingido sem resposta final."
 
 
 if __name__ == "__main__":
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        print("Defina a variável de ambiente ANTHROPIC_API_KEY antes de rodar.")
+    if not os.environ.get("OPENAI_API_KEY"):
+        print("Defina a variável de ambiente OPENAI_API_KEY antes de rodar.")
         raise SystemExit(1)
 
     objetivo = (
