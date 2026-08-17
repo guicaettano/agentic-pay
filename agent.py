@@ -1,7 +1,7 @@
 """
 agent.py
 ---------
-Agente de pagamentos (Opção 3 do plano): recebe um objetivo em linguagem
+Agente de pagamentos: recebe um objetivo em linguagem
 natural do tipo "pague essa conta até X valor", verifica saldo, decide se
 pode executar sozinho ou se precisa de confirmação humana, e só então
 executa a transferência — dentro de um teto pré-aprovado.
